@@ -17,6 +17,10 @@ target_include_directories(aoi_segmenter_lib
         ${OpenCV_INCLUDE_DIRS}
 )
 
+target_compile_definitions(aoi_segmenter_lib PRIVATE
+    $<$<CONFIG:Debug>:DEBUG_MODE>
+)
+
 target_link_libraries(aoi_segmenter_lib
     PUBLIC
         ${OpenCV_LIBS}
@@ -24,6 +28,10 @@ target_link_libraries(aoi_segmenter_lib
 
 add_executable(aoi_segmenter
     src/main.cpp
+)
+
+target_compile_definitions(aoi_segmenter PRIVATE
+    $<$<CONFIG:Debug>:DEBUG_MODE>
 )
 
 target_link_libraries(aoi_segmenter

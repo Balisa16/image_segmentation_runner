@@ -15,15 +15,11 @@ namespace fs = std::filesystem;
 
 namespace Segmenter {
 
-namespace {
-
 [[nodiscard]] bool file_exists(const std::string &path) {
     std::error_code ec;
     return !path.empty() && fs::exists(path, ec) &&
            fs::is_regular_file(path, ec);
 }
-
-} // namespace
 
 const char *to_string(ErrorCode code) noexcept {
     switch (code) {
@@ -61,7 +57,7 @@ ONNXSegmenter::ONNXSegmenter(const Config &config) : config_(config) {
 
 const Config &ONNXSegmenter::config() const noexcept { return config_; }
 
-const std::map<int, std::string> &ONNXSegmenter::classMap() const noexcept {
+const std::map<int, std::string> &ONNXSegmenter::class_map() const noexcept {
     return id_to_label;
 }
 
@@ -77,15 +73,106 @@ void ONNXSegmenter::validate_config() const {
         throw SegmenterException(ErrorCode::InvalidConfig, oss.str());
     }
 
-    if (!file_exists(config_.model_path)) {
+    if (!file_exists(config_.model_path))
         throw SegmenterException(ErrorCode::FileNotFound,
                                  "Model file not found: " + config_.model_path);
-    }
 
-    if (!file_exists(config_.class_map_path)) {
+    if (!file_exists(config_.class_map_path))
         throw SegmenterException(ErrorCode::FileNotFound,
                                  "Class map file not found: " +
                                      config_.class_map_path);
+}
+
+bool ONNXSegmenter::has_target(const std::vector<cv::dnn::Target> &targets,
+                               cv::dnn::Target t) const {
+    return std::find(targets.begin(), targets.end(), t) != targets.end();
+}
+
+BackendSelection ONNXSegmenter::choose_best_backend() const {
+    BackendSelection result{ComputeDevice::CPU, "fallback to CPU"};
+
+    const auto cuda_targets =
+        cv::dnn::getAvailableTargets(cv::dnn::DNN_BACKEND_CUDA);
+    const auto opencv_targets =
+        cv::dnn::getAvailableTargets(cv::dnn::DNN_BACKEND_OPENCV);
+    const auto vk_targets =
+        cv::dnn::getAvailableTargets(cv::dnn::DNN_BACKEND_VKCOM);
+
+    // 1. NVIDIA CUDA
+    const int cuda_device_count = cv::cuda::getCudaEnabledDeviceCount();
+    if (cuda_device_count > 0 &&
+        has_target(cuda_targets, cv::dnn::DNN_TARGET_CUDA_FP16))
+        return {ComputeDevice::CUDA_FP16, "NVIDIA CUDA FP16 available"};
+
+    if (cuda_device_count > 0 &&
+        has_target(cuda_targets, cv::dnn::DNN_TARGET_CUDA))
+        return {ComputeDevice::CUDA, "NVIDIA CUDA available"};
+
+    // Generic OpenCL (AMD / Intel)
+    if (cv::ocl::haveOpenCL()) {
+        cv::ocl::setUseOpenCL(true);
+        if (cv::ocl::useOpenCL()) {
+            if (has_target(opencv_targets, cv::dnn::DNN_TARGET_OPENCL_FP16))
+                return {ComputeDevice::OPENCL_FP16, "OpenCL FP16 available"};
+            if (has_target(opencv_targets, cv::dnn::DNN_TARGET_OPENCL))
+                return {ComputeDevice::OPENCL, "OpenCL available"};
+        }
+    }
+
+    if (has_target(vk_targets, cv::dnn::DNN_TARGET_VULKAN))
+        return {ComputeDevice::VULKAN, "Vulkan target available"};
+
+    return result;
+}
+
+void ONNXSegmenter::configure_backend() {
+    const BackendSelection choice = choose_best_backend();
+
+    try {
+        switch (choice.device) {
+        case ComputeDevice::CUDA_FP16:
+            net_.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+            net_.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA_FP16);
+            break;
+
+        case ComputeDevice::CUDA:
+            net_.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+            net_.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
+            break;
+
+        case ComputeDevice::OPENCL_FP16:
+            net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
+            net_.setPreferableTarget(cv::dnn::DNN_TARGET_OPENCL_FP16);
+            break;
+
+        case ComputeDevice::OPENCL:
+            net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
+            net_.setPreferableTarget(cv::dnn::DNN_TARGET_OPENCL);
+            break;
+
+        case ComputeDevice::VULKAN:
+            net_.setPreferableBackend(cv::dnn::DNN_BACKEND_VKCOM);
+            net_.setPreferableTarget(cv::dnn::DNN_TARGET_VULKAN);
+            break;
+
+        case ComputeDevice::CPU:
+        default:
+            net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
+            net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+            break;
+        }
+
+#ifdef DEBUG_MODE
+        std::cout << "DNN backend selected: " << choice.reason << '\n';
+#endif
+    } catch (const cv::Exception &ex) {
+        net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
+        net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+
+#ifdef DEBUG_MODE
+        std::cout << "GPU backend selection failed, using CPU: " << ex.what()
+                  << '\n';
+#endif
     }
 }
 
@@ -102,6 +189,8 @@ void ONNXSegmenter::load_model(const std::string &model_path) {
         throw SegmenterException(ErrorCode::ModelLoadFailed,
                                  "Loaded network is empty for model: " +
                                      model_path);
+
+    configure_backend();
 }
 
 void ONNXSegmenter::load_class_map(const std::string &class_map_path) {
@@ -134,10 +223,7 @@ void ONNXSegmenter::load_class_map(const std::string &class_map_path) {
             "Class map JSON is empty or unsupported. Expected format like "
             R"({"background":0,"defect":1})");
 
-    if (!id_to_label.contains(0)) {
-        // Not fatal for every model, but commonly expected.
-        // Better to be explicit.
-    }
+    // if (!id_to_label.contains(0))
 }
 
 void ONNXSegmenter::build_colors() {
@@ -289,11 +375,21 @@ SegmentationResult ONNXSegmenter::predict(const std::string &image_path) const {
 SegmentationResult ONNXSegmenter::predict(const cv::Mat &image_bgr) const {
     const cv::Size original_size(image_bgr.cols, image_bgr.rows);
 
+#ifdef DEBUG_MODE
+    auto dt_start = std::chrono::high_resolution_clock::now();
+#endif
     const cv::Mat blob = make_blob(image_bgr);
     const cv::Mat output = run_inference(blob);
     const cv::Mat small_mask = decode_class_mask(output);
     const cv::Mat full_mask =
         resize_mask_to_original(small_mask, original_size);
+#ifdef DEBUG_MODE
+    std::cout << "\033[1;32mPrediction time: "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::high_resolution_clock::now() - dt_start)
+                     .count()
+              << "ms\033[0m\n";
+#endif
 
     return compose_result(image_bgr, full_mask);
 }

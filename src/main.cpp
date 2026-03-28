@@ -1,3 +1,4 @@
+#define DEBUG_MODE
 #include "segmenter/errors.hpp"
 #include "segmenter/onnx_segmenter.hpp"
 
@@ -6,8 +7,6 @@
 #include <string>
 
 using namespace Segmenter;
-
-namespace {
 
 void print_usage(const char *prog_name) {
     std::cout << "Usage:\n"
@@ -60,8 +59,6 @@ void print_detected_classes(const std::map<std::string, int> &detected) {
         std::cout << "  - " << label << ": " << pixels << " pixels\n";
 }
 
-} // namespace
-
 int main(int argc, char **argv) {
     try {
         if (argc < 4) {
@@ -73,6 +70,7 @@ int main(int argc, char **argv) {
         const Config config = parse_args(argc, argv, image_path);
 
         const ONNXSegmenter segmenter(config);
+
         const SegmentationResult result = segmenter.predict(image_path);
 
         print_detected_classes(result.detected_classes);

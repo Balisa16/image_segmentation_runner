@@ -15,7 +15,8 @@ enum class ErrorCode {
     InvalidModelOutput,
     InferenceFailed,
     UnsupportedBatchSize,
-    InternalError
+    InternalError,
+    EmptyImage
 };
 
 class SegmenterException : public std::runtime_error {

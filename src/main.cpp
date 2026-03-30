@@ -1,4 +1,3 @@
-#define DEBUG_MODE
 #include "segmenter/errors.hpp"
 #include "segmenter/onnx_segmenter.hpp"
 

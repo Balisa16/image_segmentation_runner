@@ -1,5 +1,6 @@
 #include "segmenter/onnx_segmenter.hpp"
 #include "segmenter/errors.hpp"
+#include "segmenter/types.hpp"
 
 #include <algorithm>
 #include <cfloat>
@@ -195,10 +196,9 @@ void ONNXSegmenter::load_model(const std::string &model_path) {
 
 void ONNXSegmenter::load_class_map(const std::string &class_map_path) {
     std::ifstream file(class_map_path);
-    if (!file.is_open()) {
+    if (!file.is_open())
         throw SegmenterException(ErrorCode::ClassMapOpenFailed,
                                  "Failed to open class map: " + class_map_path);
-    }
 
     const std::string content((std::istreambuf_iterator<char>(file)),
                               std::istreambuf_iterator<char>());
@@ -240,24 +240,23 @@ void ONNXSegmenter::build_colors() {
 }
 
 cv::Mat ONNXSegmenter::make_blob(const cv::Mat &image_bgr) const {
-    if (image_bgr.empty())
-        throw SegmenterException(ErrorCode::ImageLoadFailed,
+    if (image_bgr.empty()) {
+        throw SegmenterException(ErrorCode::EmptyImage,
                                  "Input image is empty.");
+    }
 
-    cv::Mat image_rgb;
-    cv::cvtColor(image_bgr, image_rgb, cv::COLOR_BGR2RGB);
+    const bool swap_rb = (config_.model_input_order == ColorOrder::RGB);
 
     return cv::dnn::blobFromImage(
-        image_rgb, 1.0 / 255.0,
-        cv::Size(config_.image_size, config_.image_size), cv::Scalar(0, 0, 0),
-        true, false);
+        image_bgr, config_.normalize_to_unit_range ? 1.0 / 255.0 : 1.0,
+        cv::Size(config_.image_size, config_.image_size), cv::Scalar(), swap_rb,
+        false);
 }
 
 cv::Mat ONNXSegmenter::run_inference(const cv::Mat &blob) const {
     try {
-        cv::dnn::Net net_copy = net_;
-        net_copy.setInput(blob);
-        return net_copy.forward();
+        net_.setInput(blob);
+        return net_.forward();
     } catch (const cv::Exception &ex) {
         throw SegmenterException(ErrorCode::InferenceFailed,
                                  "Inference failed: " + std::string(ex.what()));

@@ -1,8 +1,9 @@
 #pragma once
-
 #include <string>
 
 namespace Segmenter {
+
+enum class ColorOrder { BGR, RGB };
 
 struct Config {
     std::string model_path;
@@ -10,6 +11,8 @@ struct Config {
     int image_size = 512;
     float alpha = 0.5f;
     int min_pixels = 50;
+    ColorOrder model_input_order = ColorOrder::RGB;
+    bool normalize_to_unit_range = true;
 
     [[nodiscard]] bool is_valid() const noexcept {
         return !model_path.empty() && !class_map_path.empty() &&
@@ -17,5 +20,4 @@ struct Config {
                min_pixels >= 0;
     }
 };
-
-}
+} // namespace Segmenter

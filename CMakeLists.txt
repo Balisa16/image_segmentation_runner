@@ -7,21 +7,21 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(OpenCV REQUIRED)
 
-add_library(aoi_segmenter_lib
+add_library(image_segmenter
     src/onnx_segmenter.cpp
 )
 
-target_include_directories(aoi_segmenter_lib
+target_include_directories(image_segmenter
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${OpenCV_INCLUDE_DIRS}
 )
 
-target_compile_definitions(aoi_segmenter_lib PRIVATE
+target_compile_definitions(image_segmenter PRIVATE
     $<$<CONFIG:Debug>:DEBUG_MODE>
 )
 
-target_link_libraries(aoi_segmenter_lib
+target_link_libraries(image_segmenter
     PUBLIC
         ${OpenCV_LIBS}
 )
@@ -36,5 +36,5 @@ target_compile_definitions(aoi_segmenter PRIVATE
 
 target_link_libraries(aoi_segmenter
     PRIVATE
-        aoi_segmenter_lib
+        image_segmenter
 )

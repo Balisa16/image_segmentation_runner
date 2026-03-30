@@ -1,7 +1,7 @@
 #pragma once
 
-#include "segmenter/config.hpp"
 #include "segmenter/result.hpp"
+#include "segmenter/types.hpp"
 
 #include <chrono>
 #include <map>
@@ -33,7 +33,7 @@ class ONNXSegmenter {
 
   private:
     Config config_;
-    cv::dnn::Net net_;
+    mutable cv::dnn::Net net_;
     std::map<int, std::string> id_to_label;
     std::map<int, cv::Vec3b> colors_;
 
@@ -57,4 +57,4 @@ class ONNXSegmenter {
                                                     const cv::Mat &mask) const;
 };
 
-}
+} // namespace Segmenter
